@@ -1,9 +1,14 @@
 --[[
 
-Gautolaga: 
-Galaga autómata controlado por red neuronal
+ Gautolaga: 
+ Galaga autómata controlado por red neuronal.
+ por Rilke Petrosky <xenomuta@gmail.com>
 
-- Rilke Petrosky <xenomuta@gmail.com>
+ Dependencias:
+ - FCEUX emulador de Nintendo Entertainment System
+ - ROM de Galaga para NES
+ - torch7: Computación científica en Lua
+ - torch-nn: Librería de redes neuronales para Torch
 
 ]]
 require "cerebro"
