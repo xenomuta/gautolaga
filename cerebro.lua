@@ -19,9 +19,10 @@ require 'nn'
 local entradas = 3856
 local capaProfunda = {200,5}
 local salidas = 3
-local ratioAprendizaje = 0.02
+local ratioAprendizaje = 0.01
 
 -- criterio de aprendizaje (Media Square Error)
+-- local criterion = nn.ParallelCriterion()
 local criterion = nn.MSECriterion()
 
 -- cerebro
@@ -33,6 +34,7 @@ for i = 1, capaProfunda[2] do
 	cerebro:add(nn.Tanh())
 end
 cerebro:add(nn.Linear(capaProfunda[1], salidas))
+-- cerebro:add(nn.LogSoftMax())
 
 -- Prepara estado
 local ultima_entrada = nil
