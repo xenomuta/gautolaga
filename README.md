@@ -2,7 +2,7 @@
 
 ![Gautolaga](screenshot.png "Gautolaga")
 
-Gautolaga es una interfaz Lua para el emulador de NES FCEUX que implementa una por red neuronal entrenada en base a las posiciones ne pantalla de los personajes y de las consecuencias de las acciones anteriores. 
+Gautolaga es una interfaz Lua para el emulador de NES FCEUX que implementa una red neuronal y la entrena en base a las posiciones en pantalla de los personajes y de las consecuencias de las acciones anteriores. 
 
 Por Rilke Petrosky <xenomuta@gmail.com>
 
