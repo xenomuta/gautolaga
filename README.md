@@ -47,14 +47,15 @@ o ejecutar `./run.sh` desde la consola.
 		```lua
 		-- Parametros de experiencia (Premios y Castigos)
 		PEREZA = -.5
+		MIEDO  = -1.3
 		MUERTE = -2.5
 		MATAR  = 1.75
-		-- MUERTE = -10 --[[ COBARDE ]]
-		-- MATAR  = 10 --[[ Asesino ]]
+		-- Un cobarde tendría un MIEDO = -.1
+		-- Un asesino, MATAR = 3.5
 		```
 	- Desbalancear estos valores puede generar loops infinitos en el entrenamiento (desaparición o explosión del descenso de la degriente).
 
-- Cada estado se almacena en archivos de ~15 MB (`mente-c-{ciclos}-p-{puntos}.dat`)
+- Cada estado se almacena en archivos de ~15 MB (`mente-{ciclos}-{puntos}.dat`)
 - Se hace un link simbólico al último (`mente.dat`)
 
 ## Bugs

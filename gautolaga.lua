@@ -26,7 +26,7 @@ local ultimoReset = 0
 local ultimoGuardar = os.clock()
 local estado = savestate.object(1)
 local botones = {}
-local posX = {0,0,0,0}
+local posX = {}
 local puntos = 0
 local lpuntos = 0
 local maxpuntos = 0
@@ -41,9 +41,7 @@ function reinicio (e)
   matar   = memory.readbyte(MEM_MATO)
   puntos  = 0
   lpuntos = 0
-  botones["left"]  = false
-  botones["right"] = false
-  botones["B"]     = false
+  botones = {left=false, right=false, B=false}
   ultimoReset = emu.framecount()
   ciclos = ciclos + 1
 end
@@ -66,9 +64,10 @@ function siguiente ()
     gui.drawtext(5 + ((i-1) * 20), 10, " "..textoBotones[i]:sub(1,1):upper().." ", "white", color(botones[textoBotones[i]]))
   end
   gui.drawtext(75, 10, " Ciclo #"..ciclos.." Puntos: "..puntos.."/"..maxpuntos.." X: "..posX[4].." ", "#ccc", "#333")
-  gui.drawline(5, 20, 5, 40, "#777777")
-  gui.drawline(5, 30, 60, 30, "#777777")
+  gui.drawline(5, 20, 5, 40, "#7f7f7f")
+  gui.drawline(5, 30, 60, 30, "#7f7f7f")
 
+  gui.drawtext(10, 20, "Experiencia", "#7f7f7f", "clear")
   local x = 5
   local y = 30
   local xp = false
@@ -90,13 +89,15 @@ function guardar ()
     maxpuntos = math.max(puntos, maxpuntos)
     -- no mas de 1 vez por cada 5 segundos
     if (os.clock() - ultimoGuardar > 5) then
-      local mente = {}
-      local archivo = "mente-c"..ciclos.."-p"..puntos..".dat"
-      mente["cerebro"]=cerebro
-      mente["estado"]=torch.IntTensor{maxpuntos, ciclos}
+      local mente = {
+        cerebro   = cerebro,
+        maxpuntos = maxpuntos,
+        ciclos    = ciclos
+      }
+      local archivo = "mente-"..ciclos.."-"..puntos..".dat"
       print("Guardando mente")
       torch.save(archivo, mente, "binary")
-      os.execute("ln -sf "..archivo.." mente.dat")
+      os.execute("/bin/ln -sf "..archivo.." mente.dat")
     end
     ultimoGuardar = os.clock()
   end
@@ -111,24 +112,31 @@ while not cerebro.listo do --[[...]] end
 -- Carga la ultima "mente" ( cerebro y estado )
 if io.open("mente.dat","r") ~= nil then
   print("Cargando mente")
-  local mente = torch.load("mente.dat", "binary")
-  cerebro   = mente["cerebro"]
-  maxpuntos = math.ceil(mente["estado"][1])
-  ciclos    = math.ceil(mente["estado"][2])
+  cerebro, maxpuntos, ciclos = unpack(torch.load("mente.dat", "binary"))
+end
+
+
+-- Premia
+function premia(exp)
+  return math.max(0, experiencia) + exp
+end
+
+-- Castiga
+function castiga(exp)
+  return math.min(0, experiencia) - exp
 end
 
 -- Loop principal
-experiencia = 0
 while true do
   -- Acumula 4 frames y 4 posiciones
   posX[4] = memory.readbyte(MEM_POSX)
   pantalla[4] = memory.readbyterange(0x2000, 960)
   for i = 1, 3 do
-    posX[i] = posX[i + 1]
-    pantalla[i] = pantalla[i + 1]
+    posX[i] = posX[i + 1] or posX[4]
+    pantalla[i] = pantalla[i + 1] or pantalla[4]
   end
 
-  -- Nuevo frame, nueva experiencia ;)
+  -- Normaliza la experiencia: -1..1
   experiencia = math.tanh(experiencia)
 
   -- Cuando tengamos los primeros 4 frames listos empezamos
@@ -144,40 +152,40 @@ while true do
     lvivo = vivo
     matar  = memory.readbyte(MEM_MATO)
     vivo  = memory.readbyte(MEM_VIVO) == 0
-    movimiento = math.abs(posX[#posX - 1] - posX[#posX]) or 0
     
+    -- Calcula el movimiento
+    movimiento = 0
+    for i = 2, #posX do
+      movimiento = posX[i] - posX[i-1]
+    end
+
     -- Premios y Castigos:
     if lvivo and not vivo then
-      -- Morir es definitivamente malo
-      experiencia = math.min(experiencia, 0) + MUERTE
+      experiencia = castiga(MUERTE)   -- Morir es definitivamente malo
       if emu.framecount() - ultimoReset > 4 then
           reinicio()
       else
         print("- Posible callejon sin salida. Mucha muerte rápida.")
       end
     elseif matar ~= lmatar then
-      -- Matar (insectos espaciales) es muy bueno
       lmatar = matar
       puntos = puntos + 1
-      experiencia = math.max(experiencia, 0) + MATAR
+      experiencia = premia(MATAR)     -- Matar (insectos espaciales) es muy bueno
       guardar()
-    elseif movimiento < 4 then
-      -- Ser miedoso es malo
-      experiencia = math.min(experiencia, 0) + MIEDO
+    elseif movimiento < 2 then
+      experiencia = castiga(MIEDO)    -- Ser miedoso es malo
     else
-      -- La pereza tambien es mala
-      experiencia = math.min(experiencia, 0) + PEREZA
+      experiencia = castiga(PEREZA)   -- La pereza tambien es mala
     end
-  
+
     -- Aprende de la experiencia el 90% de las veces
     if vivo and math.random() <= 0.90 then
-      -- altera ligeramente la experiencia para evitar loops infinitos
-      aprende(experiencia * math.random())
+      aprende(experiencia)
     end
 
     -- Histograma de experiencia
     for i = 1, 10 do
-      local n = hist_experiencia[i + 1] or (experiencia - math.tanh(experiencia / 4))
+      local n = hist_experiencia[i + 1] or experiencia -- (experiencia - math.tanh(experiencia / 4))
       hist_experiencia[i] = n
     end
   end

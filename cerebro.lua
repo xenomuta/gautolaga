@@ -21,25 +21,29 @@ local capaProfunda = {200,5}
 local salidas = 3
 local ratioAprendizaje = 0.01
 
--- criterio de aprendizaje (Media Square Error)
--- local criterion = nn.ParallelCriterion()
-local criterion = nn.MSECriterion()
-
 -- cerebro
 cerebro = nn.Sequential();
+cerebro:add(nn.SplitTablenn.SpatialConvolution(4,32,30))
 cerebro:add(nn.Linear(entradas, capaProfunda[1]))
-cerebro:add(nn.Sigmoid())
+-- cerebro:add(nn.Sigmoid())
+cerebro:add(nn.Tanh())
 for i = 1, capaProfunda[2] do
 	cerebro:add(nn.Linear(capaProfunda[1], capaProfunda[1]))
 	cerebro:add(nn.Tanh())
+	-- cerebro:add(nn.Sigmoid())
 end
 cerebro:add(nn.Linear(capaProfunda[1], salidas))
--- cerebro:add(nn.LogSoftMax())
+
+-- criterio de aprendizaje (Media Square Error)
+-- local criterion = nn.MSECriterion()
+local criterion = nn.MultiCriterion()
+criterion:add(nn.MultiMarginCriterion(),.5)
+criterion:add(nn.ClassNLLCriterion(),.5)
 
 -- Prepara estado
 local ultima_entrada = nil
 local salidas_anteriores = torch.DoubleTensor{{0,0,0},{0,0,0},{0,0,0},{0,0,0}}
-cerebro:forward(torch.DoubleTensor(entradas))
+cerebro:forward(torch.randn(entradas))
 
 -- Activa la red neuronal para decide los botones
 function piensa (pantalla, posX)
@@ -48,7 +52,7 @@ function piensa (pantalla, posX)
 	-- Setea las pantallas anteriores normalizadas
 	for i = 1, 4 do
 		for j = 1,960 do
-			entrada[j+((i-1)*960)] = (pantalla[i]:byte(j) / (5-i))
+			entrada[j+((i-1)*960)] = ((pantalla[i]:byte(j)/255) / (5-i))
 		end
 	end
 
@@ -71,20 +75,30 @@ function piensa (pantalla, posX)
 	salidas_anteriores[4] = salida
 
 	-- Prepara botones
-	botones['left'] = salida[1] > salida[2]
-	botones['right'] = salida[1] < salida[2]
-	botones['B'] = salida[3] > 0
-	return botones
+	return {
+		left  = salida[1] > 0,
+		right = salida[2] > 0,
+		B     = salida[3] > 0
+	}
 end
 
 -- Aprende de la experiencia
 function aprende (experiencia)
-  local mejora = cerebro.output * experiencia
-  criterion:forward(cerebro.output, mejora)
+  local target;
+  local o = cerebro.output
+  for i = 1, o:size(1) do
+  	if o[i] < o:max() and o[i] > o:min() then
+  		target = i
+  		break
+  	end
+  end
+  -- local target = cerebro.output * experiencia
+  -- criterion:forward(cerebro.output, target)
+  criterion:forward(cerebro.output, target)
   cerebro:zeroGradParameters()
   local error = cerebro:backward(
   	ultima_entrada,
-  	criterion:backward(cerebro.output, mejora)
+  	criterion:backward(cerebro.output, target)
   )
   cerebro:updateParameters(ratioAprendizaje)
 end
