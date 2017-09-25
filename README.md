@@ -1,6 +1,6 @@
 # Gautolaga
 
-![Gautolaga](screenshot.png "Gautolaga")
+![Gautolaga](gautolaga.gif "Gautolaga")
 
 _por Rilke Petrosky <xenomuta@gmail.com>_
 
@@ -57,16 +57,15 @@ Parametros de la Red Neuronal sequencial:
 
 		```lua
 		-- Parametros de experiencia (Premios y Castigos)
-		PEREZA = -.5
-		MUERTE = -2.5
-		MATAR  = 1.75
-		-- Un cobarde tendría un MIEDO = -.1
+		PEREZA = -.25
+		MUERTE = -.95
+		MATAR  = .8
+		-- Un cobarde tendría MUERTE > -3.5
 		-- Un asesino, MATAR = 3.5
 		```
 	- Desbalancear estos valores puede generar loops infinitos en el entrenamiento (desaparición o explosión del descenso de la degriente).
 
-- Cada estado se almacena en archivos de ~15 MB (`mente-{ciclos}-{puntos}.dat`)
-- Se hace un link simbólico al último (`mente.dat`)
+- Los ultimos 3 estados se almacenan en archivos serializados de torch de ~15 MB (`mente-1.dat` la mas reciente) cada uno.
 - Con poco esfuerzo se pueden encontrar las direcciones apropiadas para otro juego de NES.
 
 ## Bugs
