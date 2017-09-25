@@ -15,170 +15,247 @@ require "cerebro"
 require "experiencia"
 
 -- Direcciones de memoria
-local MEM_VIVO = 0x200  -- es > 0 al morir
-local MEM_MATO = 0x4AF  -- cambia al matar
-local MEM_POSX = 0x0203 -- posicion X
+local memoria = {
+  -- es > 0 al morir
+  vida = 0x200,
+  -- cambia al matar enemigo
+  mato = 0x4AF,
+  -- Nuestra posicion X
+  posX = 0x203,
+  -- posiciones y los estados de los elementos en pantalla
+  -- desde = 0x120,
+  -- hasta = 0x2f0 - 0x120
+  -- Toda la RAM del Nintendo
+  desde = 0x200,
+  hasta = 0x800 - 0x200 
+}
 
 -- Variables de estado
-local ciclos = 0
-local pantalla = {}
-local ultimoReset = 0
-local ultimoGuardar = os.clock()
-local estado = savestate.object(1)
 local botones = {}
-local posX = {0,0,0,0}
+local posX = 0
+local ciclos = 0
+local ultimoCiclo = 0
+local ultimoGuardar = os.clock()
 local puntos = 0
-local lpuntos = 0
 local maxpuntos = 0
 local experiencia = 0
-local hist_experiencia = {}
-local textoBotones = {"left","right","B"}
+local histograma = {}
+local matoEnemigo = false
+local vivia = false
+local muerto = false
+local lerr = 0
+local err = 0
 
--- Reinicio de valores
-function reinicio (e)
-  savestate.load(estado)
-  vivo    = memory.readbyte(MEM_VIVO)
-  matar   = memory.readbyte(MEM_MATO)
-  puntos  = 0
-  lpuntos = 0
-  botones["left"]  = false
-  botones["right"] = false
-  botones["B"]     = false
-  ultimoReset = emu.framecount()
-  ciclos = ciclos + 1
-end
-
--- Colores por Activos/Inactivos
-function color (activo)
-  if activo then
-    return "#11bb22"
-  else
-    return "#bb1122"
+function log(...)
+  for i, v in ipairs(arg) do
+    print(("%c[1;32m*%c[37m Gautolaga:%c[0m "):format(0x1b,0x1b,0x1b)..tostring(v))
   end
 end
 
--- Avanza el frame del emulador, dibuja texto y pulsa botones
+-- Reinicio de estado y valores
+function reinicioEstado (tranque)
+  if tranque then
+    savestate.load(savestate.object(9))
+    savestate.save(savestate.object(1))
+  else
+    savestate.load(savestate.object(1))
+    savestate.save(savestate.object(9))
+  end
+  leeMemoria()
+  puntos = 0
+  ciclos = ciclos + 1
+  ultimoCiclo = os.clock()
+
+  botones = {left=false, right=false, B=false}
+end
+-- primer estado
+savestate.create(9)
+savestate.load(savestate.object(9))
+
+-- Lee de memoria posiciones y estados en pantalla
+function leeMemoria ()
+  local diff = memory.readbyte(memoria.mato)
+  matoEnemigo = diff ~= dmato; dmato = diff
+  vivia = muerto
+  muerto = memory.readbyte(memoria.vida) ~= 0
+  posX = memory.readbyte(memoria.posX)
+  pantalla = memory.readbyterange(memoria.desde, memoria.hasta)
+end
+
+-- Avanza el frame del emulador y actualiza datos de comparación    
 function siguiente ()
   emu.frameadvance()
-  joypad.set(1, botones)
+  leeMemoria()
+  actualizaStatus()
+end
 
-  for i = 1, 3 do
-    gui.drawtext(5 + ((i-1) * 20), 10, " "..textoBotones[i]:sub(1,1):upper().." ", "white", color(botones[textoBotones[i]]))
-  end
-  gui.drawtext(75, 10, " Ciclo #"..ciclos.." Puntos: "..puntos.."/"..maxpuntos.." X: "..posX[4].." ", "#ccc", "#333")
-  gui.drawline(5, 20, 5, 40, "#777777")
-  gui.drawline(5, 30, 60, 30, "#777777")
+-- Dibuja el status de botones, valores y experiencia
+local control = {
+  color = {
+    lefttrue = "#777777",  
+    righttrue = "#777777",  
+    uptrue = "#777777",  
+    downtrue = "#777777",  
+    Btrue = "#ee3322",  
+    Atrue = "#ee3322",  
+    leftfalse = "#555555",  
+    rightfalse = "#555555",  
+    upfalse = "#555555",  
+    downfalse = "#555555",  
+    Bfalse = "#551100",  
+    Afalse = "#551100"
+  },
+  txt = {
+    left = 'O',
+    right = 'O',
+    up = 'O',
+    down = 'O',
+    B = 'B',
+    A = 'A'
+  },
+  pos = {
+    left = {5,25},
+    right = {15,25},
+    up = {10,20},
+    down = {10,30},
+    B = {25,25},
+    A = {35,25}
+  }
+}
 
-  local x = 5
-  local y = 30
-  local xp = false
-  for i = 1, #hist_experiencia do
-    local lx = x
-    local ly = y
-    xp = xp or hist_experiencia[i] > 0
-    x = 5 + (i * 50 / #hist_experiencia)
-    y = 30 - (hist_experiencia[i] * 10)
-    gui.drawline(lx, ly, x, y, color(xp))
+function actualizaStatus()
+  -- Estado de botones
+  for boton, activo in pairs(botones) do
+    gui.drawtext(control.pos[boton][1],control.pos[boton][2], control.txt[boton]
+      , control.color[boton..tostring(activo)], control.color[boton..tostring(activo)])
   end
+
+  gui.opacity(0.75)
+  -- Dibuja Histograma de Error red neuronal y Experiencia
+  local el = {
+    {f = "Err: %4f", v = err, c = "#2ecc71"},
+    {f = "Exp: %4f", v = experiencia, c= "#3498db"}
+  }
+  gui.drawtext(5, 10, ("Ciclo #%d - Puntos: %d/%d, x: %d"):format(ciclos, puntos, maxpuntos, posX), "#ccc", "clear")
+  gui.drawline(5, 40, 5, 60, "#7f7f7f", true)
+  gui.drawline(5, 50, 50, 50, "#7f7f7f",true)
+  gui.opacity(.4)
+  for j = 1,2 do
+    local x = 5
+    local y = 50
+    local xp = false
+    for i = 1, #histograma do
+      local lx = x
+      local ly = y
+      x = 5 + (i * 45 / #histograma)
+      y = 50 - (histograma[i][j] * 10)
+      gui.drawline(lx, ly, x, y, el[j].c, true)
+    end
+    gui.drawtext(10, 50+(10*j), (el[j].f):format(el[j].v), el[j].c, "clear")
+  end
+  gui.opacity(1)
 end
 
 -- Guardar estado
-function guardar ()
+function guardarEstado ()
   -- guarda solo si supero la puntuacion anterior o si ha sobrevivido 10 segundos
   if puntos >= maxpuntos or (os.clock() - ultimoGuardar > 5) then
-    savestate.save(estado)
+    savestate.save(savestate.object(1))
     maxpuntos = math.max(puntos, maxpuntos)
     -- no mas de 1 vez por cada 5 segundos
-    if (os.clock() - ultimoGuardar > 5) then
-      local mente = {}
-      local archivo = "mente-c"..ciclos.."-p"..puntos..".dat"
-      mente["cerebro"]=cerebro
-      mente["estado"]=torch.IntTensor{maxpuntos, ciclos}
-      print("Guardando mente")
-      torch.save(archivo, mente, "binary")
-      os.execute("ln -sf "..archivo.." mente.dat")
+    if (os.clock() - ultimoGuardar > 5 and ultimoGuardar < ultimoCiclo) then
+      log("Guardando mente")
+      local mente = { cerebro, maxpuntos, ciclos }
+      torch.save('mente.dat', mente, 'binary')
+      -- local archivo = ("mente-%d-%d.dat"):format(ciclos, puntos)
+      -- torch.save(archivo, mente, "binary")
+      -- os.execute(("/bin/ln -sf %s mente.dat"):format(archivo))
     end
     ultimoGuardar = os.clock()
   end
 end
 
--- Reinicia el estado
-reinicio()
-
--- Espera el Cerebro
-while not cerebro.listo do --[[...]] end
-
--- Carga la ultima "mente" ( cerebro y estado )
-if io.open("mente.dat","r") ~= nil then
-  print("Cargando mente")
-  local mente = torch.load("mente.dat", "binary")
-  cerebro   = mente["cerebro"]
-  maxpuntos = math.ceil(mente["estado"][1])
-  ciclos    = math.ceil(mente["estado"][2])
+-- Premia
+function premia(premio)
+  return math.tanh(math.max(experiencia / 2, experiencia) + premio)
 end
 
--- Loop principal
-experiencia = 0
-while true do
-  -- Acumula 4 frames y 4 posiciones
-  posX[4] = memory.readbyte(MEM_POSX)
-  pantalla[4] = memory.readbyterange(0x2000, 960)
-  for i = 1, 3 do
-    posX[i] = posX[i + 1]
-    pantalla[i] = pantalla[i + 1]
+-- Castiga
+function castiga(castigo)
+  return math.tanh(math.min(experiencia / 2, experiencia) + castigo)
+end
+
+-- Funcion principal
+function Gautolaga()
+  -- Reinicia el estado
+  reinicioEstado()
+
+  -- Carga la ultima "mente" ( cerebro y estado )
+  if io.open("mente.dat","r") ~= nil then
+    log("Cargando mente")
+    cerebro, maxpuntos, ciclos = unpack(torch.load("mente.dat", "binary"))
   end
 
-  -- Nuevo frame, nueva experiencia ;)
-  experiencia = math.tanh(experiencia)
+  -- Espera el Cerebro
+  while not cerebro.listo do
+  end
 
-  -- Cuando tengamos los primeros 4 frames listos empezamos
-  if pantalla[1] ~= nil and posX[1] ~= nil then
-    
-    -- Procesa las pantallas y las posiciones X y presiona los botones
+  -- Loop principal
+  local primerLoop = true
+  local loopPrincipal = function ()
+    -- No procesar el primer loop
+    if primerLoop then
+      primerLoop = false
+      siguiente()
+      return
+    end
+
+    -- Procesa las posiciones de los enemigos y el personaje en pantalla
     botones = piensa(pantalla, posX)
 
-    -- Avanza el frame
+
+    -- Presiona los botones
+    joypad.set(1, botones)
+
+    -- Avanza al siguiente frame
     siguiente()
 
-    -- Actualiza datos de comparación    
-    lvivo = vivo
-    matar  = memory.readbyte(MEM_MATO)
-    vivo  = memory.readbyte(MEM_VIVO) == 0
-    movimiento = math.abs(posX[#posX - 1] - posX[#posX]) or 0
-    
     -- Premios y Castigos:
-    if lvivo and not vivo then
-      -- Morir es definitivamente malo
-      experiencia = math.min(experiencia, 0) + MUERTE
-      if emu.framecount() - ultimoReset > 4 then
-          reinicio()
+    if vivia and muerto then
+      experiencia = castiga(MUERTE)   -- Morir es definitivamente malo
+      if os.clock() - ultimoCiclo > 1 then
+        reinicioEstado()
       else
-        print("- Posible callejon sin salida. Mucha muerte rápida.")
+        log("Posible callejon sin salida. Mucha muerte rápida.")
+        reinicioEstado(9)
       end
-    elseif matar ~= lmatar then
-      -- Matar (insectos espaciales) es muy bueno
-      lmatar = matar
+    elseif matoEnemigo then
+      experiencia = premia(MATAR)     -- Matar (insectos espaciales) es muy bueno
       puntos = puntos + 1
-      experiencia = math.max(experiencia, 0) + MATAR
-      guardar()
-    elseif movimiento < 4 then
-      -- Ser miedoso es malo
-      experiencia = math.min(experiencia, 0) + MIEDO
+      guardarEstado()
     else
-      -- La pereza tambien es mala
-      experiencia = math.min(experiencia, 0) + PEREZA
-    end
-  
-    -- Aprende de la experiencia el 90% de las veces
-    if vivo and math.random() <= 0.90 then
-      -- altera ligeramente la experiencia para evitar loops infinitos
-      aprende(experiencia * math.random())
+      experiencia = castiga(PEREZA)   -- La pereza tambien es mala
     end
 
-    -- Histograma de experiencia
-    for i = 1, 10 do
-      local n = hist_experiencia[i + 1] or (experiencia - math.tanh(experiencia / 4))
-      hist_experiencia[i] = n
+    -- log(('Experiencia: %f'):format(experiencia))
+    -- Aprende de la experiencia el 90% de las veces para evitar ciclos infinitos
+    if not muerto and math.random() <= .9 then
+      local e = aprende(experiencia)
+      if emu.framecount() % 5 == 0 then
+        lerr = err or 0
+        err = e
+      end
+      -- Histograma de experiencia
+      for i = 1, 10 do
+        histograma[i] = histograma[i + 1] or {(3*math.tanh(err - lerr)),experiencia}
+      end
+
     end
   end
+
+  while true do
+    loopPrincipal()
+  end
 end
+
+Gautolaga()

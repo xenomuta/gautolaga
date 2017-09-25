@@ -1,92 +1,114 @@
 require 'torch'
 require 'nn'
 
---[[ # Red Neuronal sequencial:
+--[[
 
-- Capa de entrada de 3,856 neuronas:
-	- 3,840 => 4 ultimas pantallas de 960 bytes, 32x30 posiciones de cuadros
-	- 4		=> 4 ultimas posiciones X
-	- 12	=> 4 ultimos comandos de 3 botones [<] [B] [>]
+Parametros de la Red Neuronal sequencial:
 
-- Capa profunda, 1,000 neuronas:
-	- 5x 200 => Tanh()
-
-- Capa de salida de 3 neuronas:
-	- Una para cada boton: (izquierda) (fuego) (derecha)
-	 
-]]
--- parametros
-local entradas = 3856
-local capaProfunda = {200,5}
-local salidas = 3
+(*) Capa de entrada de 4608 neuronas:
+|  - 3x 1536 (valores en la RAM del Nintendo 0x200 - 0x800)
+|  - 3x 1 (3 ultimas posiciones X)
+|  - 3x 6 (3 ultimas desiciones de 6 botones
+|
+(*) Funcion Sigmoide
+|
+(*)-- 5x Capas ocultas lineales de 200 neuronas cada una 
+`-(*)-Tangente Hiperbólica 
+|
+(*) Capa de salida de 6 neuronas: 
+    [<] [^] [>] [v] [B] [A]
+     1   2   3   4   5   6
+]]--
+local T = 3 -- evaluar los 3 ultimos estados en el tiempo
+local entradas = (1536 + 1 + 6) * T
+local capaOculta = { unidades = 50, profundidad = 3 }
+local salidas = 6
 local ratioAprendizaje = 0.01
-
--- criterio de aprendizaje (Media Square Error)
--- local criterion = nn.ParallelCriterion()
-local criterion = nn.MSECriterion()
 
 -- cerebro
 cerebro = nn.Sequential();
-cerebro:add(nn.Linear(entradas, capaProfunda[1]))
+cerebro:add(nn.Linear(entradas, capaOculta.unidades))
 cerebro:add(nn.Sigmoid())
-for i = 1, capaProfunda[2] do
-	cerebro:add(nn.Linear(capaProfunda[1], capaProfunda[1]))
-	cerebro:add(nn.Tanh())
+for i = 1, capaOculta.profundidad do
+  cerebro:add(nn.Linear(capaOculta.unidades, capaOculta.unidades))
+  cerebro:add(nn.Tanh())
 end
-cerebro:add(nn.Linear(capaProfunda[1], salidas))
--- cerebro:add(nn.LogSoftMax())
+cerebro:add(nn.Linear(capaOculta.unidades, salidas))
+
+-- Criterio de aprendizaje por la media error cuadratico medio
+local criterion = nn.MSECriterion()
+
+-- Criterio de aprendizaje por entropía cruzada  
+-- local criterion = nn.ClassNLLCriterion()
 
 -- Prepara estado
-local ultima_entrada = nil
-local salidas_anteriores = torch.DoubleTensor{{0,0,0},{0,0,0},{0,0,0},{0,0,0}}
-cerebro:forward(torch.DoubleTensor(entradas))
+local pasado = { entradas = {}, salidas = {} }
+local ultimaEntrada
+
+cerebro:forward(torch.randn(entradas))
 
 -- Activa la red neuronal para decide los botones
-function piensa (pantalla, posX)
-	local botones = {}
-	local entrada = torch.DoubleTensor(4*960)
-	-- Setea las pantallas anteriores normalizadas
-	for i = 1, 4 do
-		for j = 1,960 do
-			entrada[j+((i-1)*960)] = (pantalla[i]:byte(j) / (5-i))
-		end
-	end
+function piensa (ram, posX)
+  local botones = {}
+  local entrada = torch.DoubleTensor(#ram + 1)
 
-	-- Agrega las posiciones X anteriores
-	for i = 1, 4 do
-		entrada = entrada:cat(torch.DoubleTensor{posX[i]} / (5-i))
-	end
+  -- Utima RAM
+  for i = 1, ram:len() do
+    entrada[i] = ram:byte(i) / 255
+  end
+  -- Utima posición
+  entrada[#ram + 1] = posX / 255
+  -- Utima salida
+  entrada = entrada:cat(cerebro.output)
 
-	-- Agrega las salidas anteriores
-	for i = 1, 4 do
-		entrada = entrada:cat(torch.DoubleTensor(salidas_anteriores[i]) / (5-i))
-	end
+  -- Setea las pantallas anteriores
+  for i = 1, T do
+    pasado.entradas[i] = pasado.entradas[i + 1] or entrada
+  end
 
-	-- Actualiza estados anteriores
-	ultima_entrada = entrada
-	salida = cerebro:forward(entrada)
-	for i = 1, 3 do
-		salidas_anteriores[i] = salidas_anteriores[i + 1]
-	end
-	salidas_anteriores[4] = salida
+  -- Agrega el pasado degradando su peso por tiempo
+  for i = 1, T - 1 do
+    entrada = entrada:cat(pasado.entradas[i])
+  end
+  ultimaEntrada = entrada
 
-	-- Prepara botones
-	botones['left'] = salida[1] > salida[2]
-	botones['right'] = salida[1] < salida[2]
-	botones['B'] = salida[3] > 0
-	return botones
+  -- Activa red neuronal
+  -- print(entrada:size())
+  salida = cerebro:forward(entrada)
+
+  -- Actualiza estados anteriores
+  for i = 1, T do
+    pasado.salidas[i] = pasado.salidas[i + 1] or salida
+  end
+
+  -- Retorna los botones
+  return {
+    left  = salida[1] > 0 and salida[1] > salida[2],
+    right = salida[2] > 0 and salida[2] > salida[1],
+    up    = salida[3] > 0 and salida[3] > salida[4],
+    down  = salida[4] > 0 and salida[4] > salida[3],
+    B     = salida[5] > 0,
+    A     = salida[6] > 0
+  }
 end
 
 -- Aprende de la experiencia
+local lErr = {}
 function aprende (experiencia)
-  local mejora = cerebro.output * experiencia
-  criterion:forward(cerebro.output, mejora)
+  local mejora = cerebro.output:clone()
+
+  for i = 1, cerebro.output:size(1) do
+    if (cerebro.output[i] == cerebro.output:max()) then
+      mejora[i] = mejora[i] * experiencia
+    else
+      mejora[i] = mejora[i] / experiencia
+    end
+  end
+  local err = criterion:forward(cerebro.output, mejora)
   cerebro:zeroGradParameters()
-  local error = cerebro:backward(
-  	ultima_entrada,
-  	criterion:backward(cerebro.output, mejora)
-  )
+  cerebro:backward(ultimaEntrada, criterion:backward(cerebro.output, mejora))
   cerebro:updateParameters(ratioAprendizaje)
+  return err
 end
 
 -- Todo ready

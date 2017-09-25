@@ -2,33 +2,44 @@
 
 ![Gautolaga](screenshot.png "Gautolaga")
 
-Gautolaga es una interfaz Lua para el emulador de NES FCEUX que implementa una red neuronal y la entrena en base a las posiciones en pantalla de los personajes y de las consecuencias de las acciones anteriores. 
+_por Rilke Petrosky <xenomuta@gmail.com>_
 
-Por Rilke Petrosky <xenomuta@gmail.com>
+Gautolaga es una inteligencia artificial que juega se auto-entrena jugando Galaga via la interfaz Lua del emulador FCEUX para Nintendo.
+Esto implementando una red neuronal con los valores de la RAM del Nintendo como entrada y pulsando los botones como salida, corriegiendo el error en base a un propósito definido ( sobrevivir, acumular puntos, etc... ). 
+
+Se puede fácilmente adaptar a cualquier otro juego de NES. 
 
 ## Red neuronal
 
-Gautolaga implementa una sencilla red neuronal secuencial, con varias capas lineares.
+La red neuronal implementa por Gautolaga es una sencilla red secuencial, con varias capas lineares:
 
 ### Parametros
 
-- Capa de entrada de 3,856 neuronas:
-	- 3,840 => 4 ultimas pantallas: de 960 bytes, 32x30 posiciones de cuadros
-	- 4		=> 4 ultimas posiciones X
-	- 12	=> 4 ultimos comandos de 3 botones (izquierda, derecha y fuego)
-- Capa profunda, 1,000 neuronas:
-	- 5 capas 200 -> Tanh()
-- Capa de salida de 3 neuronas:
-	- Una para cada boton: (izquierda, derecha y fuego)
+Parametros de la Red Neuronal sequencial:
+
+(*) Capa de entrada de 4608 neuronas:
+|  - 3x 1536 (valores en la RAM del Nintendo 0x200 - 0x800)
+|  - 3x 1 (3 ultimas posiciones X)
+|  - 3x 6 (3 ultimas desiciones de 6 botones
+|
+(*) Funcion Sigmoide
+|
+(*)-- 3x Capas ocultas lineales de 50 neuronas cada una 
+`-(*)-Tangente Hiperbólica 
+|
+(*) Capa de salida de 6 neuronas: 
+    [<] [^] [>] [v] [B] [A]
+     1   2   3   4   5   6
 
 ### Diagrama
 
 ![Diagrama red neuronal](gautolaga-nn.svg "Diagrama")
 
-## Ejecutar
+## Como utilizar
 
-Cargar el ROM de Galaga y luego cargar [gautolaga.lua](./gautolaga.lua)
-o ejecutar `./run.sh` desde la consola.
+- Abrir FCEUX, cargar el ROM de Galaga y guardar un estado en el slot 1 justo al empezar el Nivel 1
+- Cargar el script [gautolaga.lua](./gautolaga.lua)
+- Para futuros casos simplemente ejecutar `./run.sh` desde la consola.
 
 ## Dependencias
 
@@ -49,13 +60,14 @@ o ejecutar `./run.sh` desde la consola.
 		PEREZA = -.5
 		MUERTE = -2.5
 		MATAR  = 1.75
-		-- MUERTE = -10 --[[ COBARDE ]]
-		-- MATAR  = 10 --[[ Asesino ]]
+		-- Un cobarde tendría un MIEDO = -.1
+		-- Un asesino, MATAR = 3.5
 		```
 	- Desbalancear estos valores puede generar loops infinitos en el entrenamiento (desaparición o explosión del descenso de la degriente).
 
-- Cada estado se almacena en archivos de ~15 MB (`mente-c-{ciclos}-p-{puntos}.dat`)
+- Cada estado se almacena en archivos de ~15 MB (`mente-{ciclos}-{puntos}.dat`)
 - Se hace un link simbólico al último (`mente.dat`)
+- Con poco esfuerzo se pueden encontrar las direcciones apropiadas para otro juego de NES.
 
 ## Bugs
 
