@@ -166,10 +166,10 @@ function guardarEstado ()
     if (os.clock() - ultimoGuardar > 5 and ultimoGuardar < ultimoCiclo) then
       log("Guardando mente")
       local mente = { cerebro, maxpuntos, ciclos }
-      torch.save('mente.dat', mente, 'binary')
-      -- local archivo = ("mente-%d-%d.dat"):format(ciclos, puntos)
-      -- torch.save(archivo, mente, "binary")
-      -- os.execute(("/bin/ln -sf %s mente.dat"):format(archivo))
+      for i = 2,1,-1 do
+        os.execute(("/bin/mv mente-%d mente-%d"):format(i,1+i))
+      end
+      torch.save("mente-1.dat", mente, "binary")
     end
     ultimoGuardar = os.clock()
   end
