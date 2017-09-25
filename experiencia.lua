@@ -5,7 +5,6 @@ Parametros de experiencia (Premios y Castigos):
  - Un asesino tiene un valor MATAR muy alto
  
 ]]--
-PEREZA = -.5
-MIEDO  = -1.3
-MUERTE = -2.5
-MATAR  = 1.75
+PEREZA = -.25
+MUERTE = -.95
+MATAR  = .8
